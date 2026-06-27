@@ -1,0 +1,1720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Portfolio Terminal</title>
+
+    <script>
+        // API KEY — loaded from localStorage, never hardcoded
+        function getTwelveDataKey() {
+            return localStorage.getItem('twelve_data_api_key') || null;
+        }
+
+        // DEFAULT CONFIGURATION
+        const defaultPortfolio = [
+            { ticker: 'GOOG',   name: 'Google',  type: 'stock',  qty: 0,       apiId: null       },
+        ];
+
+        // LOAD PORTFOLIO
+        let portfolio = JSON.parse(localStorage.getItem('asset_terminal_data')) || defaultPortfolio;
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-dark: #050505;
+            --glass-bg: rgba(20, 20, 30, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.15);
+            --neon-green: #00ff9d;
+            --neon-red: #ff0055;
+            --neon-blue: #00f3ff;
+            --neon-purple: #bc13fe;
+            --text-primary: #ffffff;
+            --text-muted: #8899a6;
+            --font-display: 'JetBrains Mono', monospace;
+            --font-body: 'Inter', sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(76, 29, 149, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(14, 165, 233, 0.15), transparent 25%);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            perspective: 1000px;
+        }
+
+        /* --- INPUT STYLES --- */
+        .qty-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--neon-blue);
+            font-family: var(--font-display);
+            font-size: 16px; /* Prevents iOS zoom on focus */
+            padding: 8px 10px;
+            width: 80px;
+            border-radius: 4px;
+            text-align: right;
+            transition: all 0.3s;
+        }
+
+        .qty-input:focus {
+            outline: none;
+            border-color: var(--neon-blue);
+            background: rgba(0, 243, 255, 0.1);
+        }
+
+        /* --- MODAL STYLES (FIXED POSITIONING) --- */
+        .modal-overlay {
+            position: fixed; 
+            top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.85); 
+            backdrop-filter: blur(8px);
+            z-index: 9999; 
+            display: none; 
+            
+            /* FIX APPLIED HERE: */
+            /* Removed flex-direction: column to allow standard centering */
+            justify-content: center; /* Centers horizontally */
+            align-items: flex-start; /* Aligns to top vertically */
+            padding-top: 15vh;       /* Spacing from the top of screen */
+        }
+        .modal-overlay.open { display: flex; }
+        
+        .modal-content {
+            width: 90%; 
+            max-width: 400px;
+            background: #0a0a0f; 
+            border: 1px solid var(--neon-blue);
+            box-shadow: 0 0 40px rgba(0, 243, 255, 0.15);
+            padding: 30px; 
+            border-radius: 12px;
+            transform: scale(0.9);
+            animation: modalPop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        
+        @keyframes modalPop {
+            to { transform: scale(1); }
+        }
+
+        .modal-form-group { margin-bottom: 15px; width: 100%; }
+        .modal-label { display: block; color: var(--text-muted); font-size: 0.8rem; margin-bottom: 5px; font-family: var(--font-display); }
+        .modal-input {
+            width: 100%; padding: 12px; background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border); color: #fff;
+            font-family: var(--font-display); border-radius: 6px;
+        }
+        .modal-input:focus { outline: none; border-color: var(--neon-blue); }
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px; width: 100%; }
+
+        /* --- SIDEBAR STYLES --- */
+        .sidebar-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); 
+            z-index: 4000; 
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .sidebar-overlay.active { display: block; opacity: 1; }
+
+        .sidebar {
+            position: fixed;
+            top: 0; left: 0; height: 100%; width: 260px;
+            background: rgba(10, 10, 15, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid var(--neon-blue);
+            z-index: 5000;
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            box-shadow: 10px 0 50px rgba(0,0,0,0.5);
+        }
+
+        .sidebar.open { transform: translateX(0); }
+
+        .sidebar-header {
+            font-family: var(--font-display);
+            color: var(--neon-blue);
+            font-size: 1rem;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 12px;
+        }
+
+        /* --- UI COMPONENTS --- */
+        .menu-btn {
+            position: absolute;
+            top: 25px; left: 25px;
+            background: none; border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            z-index: 100;
+            transition: 0.3s;
+        }
+        .menu-btn:hover { color: var(--neon-blue); transform: scale(1.1); }
+        .menu-btn svg { width: 32px; height: 32px; stroke: currentColor; stroke-width: 2; }
+
+        .eye-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+            margin-left: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            opacity: 0.6;
+            width: 32px;
+            height: 32px;
+        }
+
+        .eye-btn svg {
+            width: 24px;
+            height: 24px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .eye-btn:hover {
+            opacity: 1;
+            color: var(--neon-blue);
+            transform: scale(1.1);
+            filter: drop-shadow(0 0 5px var(--neon-blue));
+        }
+
+        /* --- TICKER STYLES (JS-DRIVEN AUTO-SCROLL + MANUAL) --- */
+        .ticker-wrap {
+            width: 100%;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            margin-bottom: 25px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+            mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+            cursor: grab;
+            /* Hide scrollbar but keep scrollability */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .ticker-wrap::-webkit-scrollbar { display: none; }
+        .ticker-wrap:active { cursor: grabbing; }
+
+        .ticker-track {
+            display: flex;
+            white-space: nowrap;
+            will-change: transform;
+            /* No CSS animation — JS controls scrollLeft */
+        }
+
+        .ticker-item {
+            display: inline-flex;
+            align-items: center;
+            padding: 0 2rem;
+            color: var(--text-muted);
+            font-family: var(--font-display);
+            font-size: 0.85rem;
+        }
+
+        .ticker-item strong { font-weight: 800; }
+        .ticker-up { color: var(--neon-green); }
+        .ticker-down { color: var(--neon-red); }
+
+        /* --- STANDARD UI CSS --- */
+        .ripple {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.6);
+            transform: scale(0);
+            animation: ripple-anim 0.6s linear;
+            pointer-events: none;
+        }
+
+        @keyframes ripple-anim {
+            to { transform: scale(4); opacity: 0; }
+        }
+
+        @keyframes breathe {
+            0%, 100% { transform: translateY(0) translateZ(0); }
+            50% { transform: translateY(-6px) translateZ(10px); }
+        }
+
+        .alive { animation: breathe 6s ease-in-out infinite; }
+        .alive-delay-1 { animation-delay: 1s; }
+        .alive-delay-2 { animation-delay: 2.5s; }
+
+        .skeleton {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+            color: transparent !important;
+            user-select: none;
+        }
+        
+        .skeleton::after {
+            content: "";
+            position: absolute;
+            top: 0; right: 0; bottom: 0; left: 0;
+            transform: translateX(-100%);
+            background-image: linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0) 0,
+                rgba(255, 255, 255, 0.1) 20%,
+                rgba(255, 255, 255, 0.2) 60%,
+                rgba(255, 255, 255, 0)
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            100% { transform: translateX(100%); }
+        }
+
+        #boot-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #000;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease-out;
+        }
+
+        .boot-btn {
+            background: transparent;
+            border: 1px solid var(--neon-blue);
+            color: var(--neon-blue);
+            padding: 20px 40px;
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            position: relative;
+            overflow: hidden;
+            transition: 0.3s;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+        }
+
+        .boot-btn:hover {
+            background: var(--neon-blue);
+            color: #000;
+            box-shadow: 0 0 50px rgba(0, 243, 255, 0.6);
+        }
+
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            background: var(--neon-blue);
+            border-radius: 50%;
+            z-index: 9999;
+            opacity: 0;
+        }
+        
+        .trail-particle {
+            position: absolute;
+            width: 4px; height: 4px;
+            background: var(--neon-blue);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9000;
+            animation: fadeTrail 0.8s forwards;
+            box-shadow: 0 0 6px var(--neon-blue);
+        }
+
+        @keyframes fadeTrail {
+            0% { opacity: 0.8; transform: scale(1); }
+            100% { opacity: 0; transform: scale(0); }
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            margin-bottom: 25px;
+            transition: transform 0.1s ease-out, box-shadow 0.3s ease;
+            transform-style: preserve-3d;
+            position: relative;
+        }
+
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: 20px;
+            background: radial-gradient(
+                800px circle at var(--mouse-x) var(--mouse-y),
+                rgba(255, 255, 255, 0.06),
+                transparent 40%
+            );
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .glass-panel:hover::before { opacity: 1; }
+
+        .glass-panel:hover {
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1);
+            z-index: 50;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.1s ease-out, transform 0.1s ease-out;
+        }
+        
+        .container.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .hero {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+            align-items: center; /* Centered content */
+            padding-top: 40px; /* Space for menu button */
+        }
+        
+        .total-balance-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .total-balance-section h2 {
+            font-family: var(--font-body);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin: 0 0 10px 0;
+        }
+
+        .value-wrapper {
+            display: flex;
+            align-items: center;
+        }
+
+        .value {
+            font-family: var(--font-display);
+            font-size: 4.5rem;
+            font-weight: 800;
+            background: linear-gradient(180deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+            letter-spacing: -2px;
+            text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            position: relative;
+            z-index: 2;
+        }
+
+        .pnl-section {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 300px;
+            width: 100%;
+        }
+
+        .pnl-text {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center; /* Centered pnl */
+            gap: 10px;
+        }
+
+        .pnl-bar-bg {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .pnl-bar-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .pnl-bar-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; bottom: 0; width: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+            transform: translateX(-100%);
+            animation: pnl-shimmer 2s infinite;
+        }
+
+        @keyframes pnl-shimmer { 100% { transform: translateX(100%); } }
+
+        .currency-prefix {
+            font-family: var(--font-display);
+            font-size: 4.5rem;
+            font-weight: 800;
+            color: #475569; 
+            margin-right: 10px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            position: relative;
+            z-index: 10;
+            flex-wrap: wrap;
+            width: 100%;
+        }
+
+        button.control-btn {
+            background: rgba(0, 243, 255, 0.05);
+            color: var(--neon-blue);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: var(--font-display);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            width: auto;
+        }
+
+        /* Sidebar specific buttons */
+        .sidebar-btn {
+            width: 100%;
+            flex: 0 0 auto;
+            min-height: 38px;
+            text-align: left;
+            padding: 9px 14px;
+            font-size: 0.72rem;
+            letter-spacing: 1.5px;
+            line-height: 1.2;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            white-space: nowrap;
+        }
+        .sidebar-btn:hover {
+            background: rgba(0, 243, 255, 0.1);
+            color: #fff;
+            border-color: var(--neon-blue);
+            transform: translateX(5px) !important;
+            box-shadow: none !important;
+        }
+
+
+        button.control-btn:hover {
+            background: var(--neon-blue);
+            color: #000;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.6);
+            border-color: var(--neon-blue);
+            transform: scale(1.05);
+        }
+        
+        button.control-btn:active { transform: scale(0.95); }
+
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(0, 243, 255, 0.4); }
+            70% { box-shadow: 0 0 0 20px rgba(0, 243, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 243, 255, 0); }
+        }
+        
+        .sync-active { animation: pulse-ring 1.5s infinite; }
+        
+        .del-btn {
+            background: transparent; border: 1px solid rgba(255, 0, 85, 0.3);
+            color: var(--neon-red); width: 30px; height: 30px; border-radius: 4px;
+            cursor: pointer; font-family: var(--font-display); font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .del-btn:hover { background: var(--neon-red); color: #000; }
+
+        .charts-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 2fr; 
+            gap: 25px;
+            margin-bottom: 25px; 
+            position: relative;
+        }
+
+        .chart-header h3 {
+            margin: 0;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* --- TABLE STYLES --- */
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
+            table-layout: fixed; 
+            min-width: 600px;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px 20px;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .text-right { text-align: right; }
+        
+        tbody tr {
+            transition: all 0.3s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        tbody tr:hover {
+            transform: scale(1.02) translateZ(10px);
+            background: rgba(255,255,255,0.03);
+            z-index: 10;
+        }
+        
+        tbody td {
+            padding: 15px 20px;
+            font-family: var(--font-display);
+            background-color: rgba(0,0,0,0.2);
+            border-top: 1px solid rgba(255,255,255,0.02);
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+            vertical-align: middle;
+        }
+        
+        tbody tr td:first-child {
+            border-left: 2px solid transparent;
+            border-top-left-radius: 12px;
+            border-bottom-left-radius: 12px;
+        }
+
+        tbody tr:hover td:first-child { border-left-color: var(--neon-blue); }
+
+        tbody tr td:last-child {
+            border-top-right-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+
+        .ticker-badge {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 700;
+            color: #fff;
+            margin-right: 12px;
+            display: inline-block;
+            transition: 0.3s;
+        }
+        
+        tbody tr:hover .ticker-badge {
+            background: var(--neon-blue);
+            color: #000;
+        }
+
+        .price-glow { transition: text-shadow 0.3s; }
+        tbody tr:hover .price-glow { text-shadow: 0 0 15px rgba(255,255,255,0.8); }
+        
+        .positive { color: var(--neon-green); }
+        .negative { color: var(--neon-red); }
+
+        @media (max-width: 900px) {
+            .hero { text-align: center; align-items: center; } 
+            .charts-wrapper { grid-template-columns: 1fr; }
+            .controls { justify-content: center; width: 100%; flex-direction: row; }
+            .value-wrapper { justify-content: center; }
+            .controls > button.control-btn { flex: 1; font-size: 0.65rem; padding: 12px 10px; }
+            .value { font-size: 3rem; }
+            .currency-prefix { font-size: 3rem; }
+            .hide-mobile { display: none; }
+            .pnl-section { margin: 15px auto; }
+            .hide-mobile-strict { display: none; }
+            
+            /* Sidebar adjustments for mobile */
+            .sidebar { width: 80%; max-width: 300px; }
+            .sidebar .sidebar-btn {
+                flex: 0 0 auto;
+                min-height: 38px;
+                padding: 9px 14px;
+                font-size: 0.72rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="boot-screen">
+    <!-- Shown when no API key is stored -->
+    <div id="boot-api-form" style="display:none; flex-direction:column; align-items:center; gap:18px; width:90%; max-width:420px;">
+        <div style="font-family:var(--font-display); color:var(--neon-blue); font-size:1.1rem; letter-spacing:3px; text-align:center;">TWELVE DATA API KEY</div>
+        <div style="color:var(--text-muted); font-family:var(--font-display); font-size:0.72rem; text-align:center; line-height:1.6;">
+            Required for live stock prices.<br>
+            Free tier at <span style="color:var(--neon-blue)">twelvedata.com</span> — stored locally, never sent anywhere else.
+        </div>
+        <input
+            id="api-key-input"
+            type="password"
+            placeholder="Paste your API key here..."
+            autocomplete="off"
+            spellcheck="false"
+            style="
+                width:100%; padding:14px 16px;
+                background:rgba(0,243,255,0.05);
+                border:1px solid var(--neon-blue);
+                border-radius:6px;
+                color:#fff;
+                font-family:var(--font-display);
+                font-size:0.9rem;
+                letter-spacing:1px;
+                outline:none;
+                text-align:center;
+            "
+            oninput="document.getElementById('boot-api-error').style.display='none'"
+            onkeydown="if(event.key==='Enter') saveApiKeyAndBoot()"
+        />
+        <div id="boot-api-error" style="display:none; color:var(--neon-red); font-family:var(--font-display); font-size:0.75rem;">
+            ⚠ Please enter a valid API key.
+        </div>
+        <button class="boot-btn" onclick="saveApiKeyAndBoot()" style="width:100%; margin-top:4px;">
+            SAVE & LAUNCH
+        </button>
+    </div>
+
+    <!-- Shown when key already exists -->
+    <div id="boot-launch" style="display:none; flex-direction:column; align-items:center; gap:16px;">
+        <button class="boot-btn" onclick="initializeSystem()">VIEW PORTFOLIO</button>
+        <button onclick="forgetApiKey()" style="
+            background:none; border:none;
+            color:var(--text-muted); font-family:var(--font-display);
+            font-size:0.72rem; letter-spacing:2px; cursor:pointer;
+            text-decoration:underline; padding:4px;
+        ">CHANGE API KEY</button>
+    </div>
+</div>
+
+<input type="file" id="import-file" style="display:none" accept=".json" onchange="importPortfolio(this)">
+
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar(false)"></div>
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">ACTIONS</div>
+    
+    <button class="control-btn sidebar-btn" onclick="toggleSidebar(false); toggleModal(true)">
+        <span style="color: #fff;">+ ADD NEW ASSET</span>
+    </button>
+    
+    <button class="control-btn sidebar-btn" id="save-btn" onclick="toggleSidebar(false); savePortfolio()">
+        <span style="color: var(--neon-green);">SAVE CONFIG</span>
+    </button>
+    
+    <button class="control-btn sidebar-btn" onclick="toggleSidebar(false); exportPortfolio()">
+        <span style="color: var(--neon-purple);">EXPORT JSON</span>
+    </button>
+    
+    <button class="control-btn sidebar-btn" onclick="toggleSidebar(false); document.getElementById('import-file').click()">
+        <span style="color: var(--neon-purple);">IMPORT JSON</span>
+    </button>
+
+    <button class="control-btn sidebar-btn" onclick="toggleSidebar(false); forgetApiKey()">
+        <span style="color: var(--neon-red);">CHANGE API KEY</span>
+    </button>
+
+    <div style="margin-top: auto; font-size: 0.7rem; color: #555; text-align: center; font-family: var(--font-display);">
+        SYSTEM V1.0.3
+    </div>
+</div>
+
+<div id="add-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h3 style="color:var(--neon-blue); margin-top:0; font-family:var(--font-display);">ADD NEW ASSET</h3>
+        
+        <div class="modal-form-group">
+            <label class="modal-label">ASSET TYPE</label>
+            <select id="new-type" class="modal-input" onchange="toggleApiIdField()">
+                <option value="stock">STOCK (US)</option>
+                <option value="crypto">CRYPTO</option>
+            </select>
+        </div>
+
+        <div class="modal-form-group">
+            <label class="modal-label">TICKER SYMBOL</label>
+            <input id="new-ticker" class="modal-input" placeholder="e.g. AAPL, BTC" style="text-transform: uppercase;">
+        </div>
+
+        <div class="modal-form-group">
+            <label class="modal-label">ASSET NAME</label>
+            <input id="new-name" class="modal-input" placeholder="e.g. Apple Inc">
+        </div>
+
+        <div class="modal-form-group" id="api-id-group" style="display:none;">
+            <label class="modal-label">COINGECKO ID (Required for Crypto)</label>
+            <input id="new-api-id" class="modal-input" placeholder="e.g. bitcoin, ethereum, polkadot">
+            <small style="color:#666; display:block; margin-top:5px; font-size:0.7rem;">Look up exact ID on CoinGecko.com</small>
+        </div>
+
+        <div class="modal-form-group">
+            <label class="modal-label">QUANTITY</label>
+            <input id="new-qty" type="number" class="modal-input" placeholder="0.00" step="any">
+        </div>
+
+        <div class="modal-actions">
+            <button class="boot-btn" style="flex:1; padding:10px;" onclick="addNewAsset()">CONFIRM</button>
+            <button class="boot-btn" style="flex:1; padding:10px; border-color:var(--neon-red); color:var(--neon-red);" onclick="toggleModal(false)">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div class="container" id="main-interface">
+    
+    <div class="glass-panel hero alive" id="hero-panel">
+        <button class="menu-btn" onclick="toggleSidebar(true)" aria-label="Open Menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+
+        <div class="total-balance-section">
+            <h2>Net Liquid Value</h2>
+            <div class="value-wrapper">
+                <span id="main-currency-symbol" class="currency-prefix">€</span>
+                <span id="total-value" class="value">0,00</span>
+                <button class="eye-btn" onclick="toggleVisibility()" id="eye-icon" aria-label="Toggle Privacy">
+                    <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+            </div>
+            
+            <div class="pnl-section">
+                <div class="pnl-text">
+                    <span style="color:#888; font-size: 0.8rem;">24h P&L:</span>
+                    <span id="pnl-value">--</span>
+                    <span id="pnl-percent" style="font-size: 0.8rem;">(0.00%)</span>
+                </div>
+                <div class="pnl-bar-bg">
+                    <div id="pnl-bar" class="pnl-bar-fill"></div>
+                </div>
+            </div>
+
+        </div>
+        <div class="controls">
+            <button class="control-btn" id="refresh-btn" onmouseenter="fx.playHover()" onclick="createRipple(event); syncData()">
+                <span id="btn-text">Sync Data</span>
+            </button>
+            <button class="control-btn" id="currency-toggle" onmouseenter="fx.playHover()" onclick="createRipple(event); toggleCurrency()">USD / EUR / NPR / BTC</button>
+            <button class="control-btn" onclick="lockTerminal()" style="border-color: var(--neon-red); color:var(--neon-red);">LOCK</button>
+        </div>
+    </div>
+
+    <div class="charts-wrapper" id="charts-area">
+        <div class="glass-panel alive alive-delay-1" id="pie-panel">
+            <div class="chart-header">
+                <h3>Exposure</h3>
+            </div>
+            <div style="height: 250px; position: relative;">
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+        <div class="glass-panel alive alive-delay-2" id="bar-panel">
+            <div class="chart-header">
+                <h3>Asset Performance</h3>
+            </div>
+            <div style="height: 250px;">
+                <canvas id="barChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="ticker-wrap" id="ticker-wrap">
+        <div class="ticker-track" id="ticker-track">
+            <span class="ticker-item">System Status: <strong>INITIALIZING...</strong></span>
+        </div>
+    </div>
+
+    <div class="glass-panel table-panel" id="table-panel">
+        <div class="chart-header" style="margin-top: 5px; margin-bottom: 20px;">
+            <h3>Holdings</h3>
+        </div>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 30%;">Asset</th>
+                        <th style="width: 20%;" id="header-price">Mark Price</th>
+                        <th style="width: 15%;" class="hide-mobile">24h Change</th>
+                        <th style="width: 15%;">Units</th>
+                        <th style="width: 20%;" id="header-val" class="text-right">Total Value</th>
+                        <th style="width: 5%;"></th>
+                    </tr>
+                </thead>
+                <tbody id="asset-table-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- UI INTERACTION LOGIC ---
+    function toggleSidebar(show) {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (show) {
+            sidebar.classList.add('open');
+            overlay.classList.add('active');
+            fx.playClick();
+        } else {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+        }
+    }
+
+    function createRipple(event) {
+        const button = event.currentTarget;
+        const circle = document.createElement("span");
+        const diameter = Math.max(button.clientWidth, button.clientHeight);
+        const radius = diameter / 2;
+        const rect = button.getBoundingClientRect();
+        circle.style.width = circle.style.height = `${diameter}px`;
+        circle.style.left = `${event.clientX - rect.left - radius}px`;
+        circle.style.top = `${event.clientY - rect.top - radius}px`;
+        circle.classList.add("ripple");
+        const ripple = button.getElementsByClassName("ripple")[0];
+        if (ripple) ripple.remove();
+        button.appendChild(circle);
+    }
+
+    function initChartParticles() {
+        const container = document.getElementById('charts-area');
+        let lastX = 0, lastY = 0;
+        container.addEventListener('mousemove', (e) => {
+            const dist = Math.hypot(e.clientX - lastX, e.clientY - lastY);
+            if(dist < 20) return; 
+            lastX = e.clientX;
+            lastY = e.clientY;
+            const p = document.createElement('div');
+            p.classList.add('trail-particle');
+            p.style.left = (e.pageX) + 'px';
+            p.style.top = (e.pageY) + 'px';
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 800);
+        });
+    }
+
+    // --- AUDIO ENGINE ---
+    class SoundFX {
+        constructor() {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            this.enabled = true;
+            this.whirOsc = null;
+            this.whirGain = null;
+            this.rumbleOsc = null;
+            this.rumbleGain = null;
+        }
+
+        resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
+
+        startWhirling() {
+            if (!this.enabled) return;
+            this.resume();
+            const t = this.ctx.currentTime;
+            this.whirOsc = this.ctx.createOscillator();
+            this.whirGain = this.ctx.createGain();
+            const filter = this.ctx.createBiquadFilter();
+            this.whirOsc.type = 'sawtooth'; 
+            this.whirOsc.frequency.setValueAtTime(40, t); 
+            this.whirOsc.frequency.exponentialRampToValueAtTime(220, t + 2.0); 
+            filter.type = 'lowpass';
+            filter.frequency.value = 400; 
+            this.whirGain.gain.setValueAtTime(0, t);
+            this.whirGain.gain.linearRampToValueAtTime(0.15, t + 0.5); 
+            this.whirOsc.connect(filter);
+            filter.connect(this.whirGain);
+            this.whirGain.connect(this.ctx.destination);
+            this.whirOsc.start(t);
+
+            this.rumbleOsc = this.ctx.createOscillator();
+            this.rumbleGain = this.ctx.createGain();
+            this.rumbleOsc.type = 'square';
+            this.rumbleOsc.frequency.setValueAtTime(30, t);
+            this.rumbleOsc.frequency.linearRampToValueAtTime(80, t + 2.0);
+            this.rumbleGain.gain.setValueAtTime(0, t);
+            this.rumbleGain.gain.linearRampToValueAtTime(0.08, t + 0.5);
+            const rumbleFilter = this.ctx.createBiquadFilter();
+            rumbleFilter.type = 'lowpass';
+            rumbleFilter.frequency.value = 100;
+            this.rumbleOsc.connect(rumbleFilter);
+            rumbleFilter.connect(this.rumbleGain);
+            this.rumbleGain.connect(this.ctx.destination);
+            this.rumbleOsc.start(t);
+        }
+
+        async decelerate() {
+            if (!this.whirOsc || !this.rumbleOsc) return;
+            const t = this.ctx.currentTime;
+            const duration = 1.5; 
+            this.whirOsc.frequency.exponentialRampToValueAtTime(10, t + duration); 
+            this.whirGain.gain.linearRampToValueAtTime(0, t + duration);
+            this.rumbleOsc.frequency.linearRampToValueAtTime(10, t + duration);
+            this.rumbleGain.gain.linearRampToValueAtTime(0, t + duration);
+            this.whirOsc.stop(t + duration);
+            this.rumbleOsc.stop(t + duration);
+            return new Promise(resolve => setTimeout(resolve, duration * 1000));
+        }
+
+        playLowFreqDrum() {
+            if (!this.enabled) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(90, this.ctx.currentTime);
+            gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 2.0);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            setTimeout(() => osc.stop(), 2000);
+        }
+
+        playTone(freq, type, duration, vol = 0.1) {
+            if (!this.enabled) return;
+            this.resume();
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        }
+
+        playHover() { 
+            if (!this.enabled) return;
+            this.resume();
+            const t = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, t); 
+            gain.gain.setValueAtTime(0.08, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04); 
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.05);
+        }
+        
+        playClick() { 
+            if (!this.enabled) return;
+            this.resume();
+            const t = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle'; 
+            osc.frequency.setValueAtTime(600, t);
+            osc.frequency.exponentialRampToValueAtTime(300, t + 0.05); 
+            gain.gain.setValueAtTime(0.1, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08); 
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.1);
+        }
+
+        playChartHover(valueFactor = 0.5) {
+            if (!this.enabled) return;
+            this.resume();
+            const baseFreq = 400 + (valueFactor * 400); 
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.03);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.05);
+        }
+
+        playSuccess() {
+            setTimeout(() => this.playTone(523.25, 'sine', 0.4, 0.05), 0); 
+            setTimeout(() => this.playTone(659.25, 'sine', 0.4, 0.05), 80); 
+        }
+    }
+
+    const fx = new SoundFX();
+    let isFirstLoad = true;
+    let isLoading = false;
+    let isHidden = false; // Toggle state
+
+    // --- ICONS (SVG STRINGS) ---
+    const iconEyeOpen = `<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+    const iconEyeClosed = `<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+
+
+    // --- VISUAL FX ---
+    function handleTilt(e) {
+        const el = e.currentTarget;
+        const rect = el.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        el.style.setProperty('--mouse-x', `${x}px`);
+        el.style.setProperty('--mouse-y', `${y}px`);
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const rotateX = ((y - centerY) / centerY) * -2;
+        const rotateY = ((x - centerX) / centerX) * 2;
+        el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.01, 1.01, 1.01)`;
+    }
+
+    function resetTilt(e) {
+        e.currentTarget.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale3d(1, 1, 1)`;
+    }
+
+    document.querySelectorAll('.glass-panel').forEach(panel => {
+        panel.addEventListener('mousemove', handleTilt);
+        panel.addEventListener('mouseleave', resetTilt);
+    });
+
+    function explodeParticles(x, y, multiColor = false) {
+        const colors = ['#00f3ff', '#00ff9d', '#ff0055', '#bc13fe', '#ffe600'];
+        for (let i = 0; i < 15; i++) {
+            const p = document.createElement('div');
+            p.classList.add('particle');
+            if (multiColor) {
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                p.style.backgroundColor = color;
+                p.style.boxShadow = `0 0 8px ${color}`;
+            }
+            document.body.appendChild(p);
+            const size = Math.random() * 4 + 2;
+            p.style.width = p.style.height = `${size}px`;
+            p.style.left = `${x}px`;
+            p.style.top = `${y}px`;
+            const angle = Math.random() * Math.PI * 2;
+            const velocity = Math.random() * 100 + 50;
+            const destX = x + Math.cos(angle) * velocity;
+            const destY = y + Math.sin(angle) * velocity;
+            p.animate([
+                { transform: `translate(0,0) scale(1)`, opacity: 1 },
+                { transform: `translate(${destX - x}px, ${destY - y}px) scale(0)`, opacity: 0 }
+            ], { duration: 1640 + Math.random() * 1600, easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)' }).onfinish = () => p.remove();
+        }
+    }
+
+    // --- CORE DATA LOGIC ---
+    let state = {
+        currency: 'EUR', 
+        exchangeRate: 0.92,
+        exchangeRateNPR: 134.50,
+        btcPrice: 0,
+        prices: {},
+        barChartInstance: null,
+        pieChartInstance: null
+    };
+
+    function formatNumber(amount, decimals) {
+        if (isHidden) return '••••••'; 
+
+        if (decimals === undefined) decimals = state.currency === 'BTC' ? 4 : 2;
+        const locale = state.currency === 'EUR' ? 'de-DE' : 'en-US';
+        return new Intl.NumberFormat(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(amount);
+    }
+    
+    function toggleVisibility() {
+        isHidden = !isHidden;
+        fx.playClick();
+        
+        const eyeIcon = document.getElementById('eye-icon');
+        // SVG Swap
+        eyeIcon.innerHTML = isHidden ? iconEyeClosed : iconEyeOpen;
+        
+        render();
+    }
+
+    function getSymbol() { 
+        if (state.currency === 'EUR') return '€';
+        if (state.currency === 'NPR') return 'Rs';
+        if (state.currency === 'BTC') return '₿';
+        return '$';
+    }
+
+    function animateValue(obj, start, end, duration, formatFn) {
+        let startTimestamp = null;
+        const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+            obj.innerHTML = formatFn((1 - Math.pow(1 - progress, 3)) * (end - start) + start);
+            if (progress < 1) window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+    }
+
+    async function fetchForex() {
+        try {
+            const resEur = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR');
+            const dataEur = await resEur.json();
+            state.exchangeRate = dataEur.rates.EUR;
+            const resNpr = await fetch('https://open.er-api.com/v6/latest/USD');
+            const dataNpr = await resNpr.json();
+            if(dataNpr?.rates?.NPR) state.exchangeRateNPR = dataNpr.rates.NPR;
+        } catch (e) { console.error("FX Error:", e); }
+    }
+
+    async function fetchCrypto() {
+        const ids = portfolio.filter(a => a.type === 'crypto').map(a => a.apiId).join(',');
+        try {
+            const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur&include_24hr_change=true`);
+            const data = await res.json();
+            if(data.bitcoin) state.btcPrice = data.bitcoin.usd;
+            portfolio.filter(a => a.type === 'crypto').forEach(asset => {
+                const item = data[asset.apiId];
+                if(item) state.prices[asset.ticker] = { usd: item.usd, eur: item.eur, change: item.usd_24h_change, type: 'crypto' };
+            });
+        } catch (e) { console.error("Crypto Error:", e); }
+    }
+
+    async function fetchStocks() {
+        const stockTickers = portfolio.filter(a => a.type === 'stock').map(a => a.ticker).join(',');
+        if (!stockTickers) return; 
+
+        const url = `https://api.twelvedata.com/quote?symbol=${stockTickers}&apikey=${getTwelveDataKey()}`;
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+
+            const processStock = (ticker, stockData) => {
+                if (stockData && stockData.close) {
+                    state.prices[ticker] = { 
+                        usd: parseFloat(stockData.close), 
+                        change: parseFloat(stockData.percent_change) || 0, 
+                        type: 'stock' 
+                    };
+                }
+            };
+
+            if (data.symbol) {
+                processStock(data.symbol, data);
+            } else {
+                Object.keys(data).forEach(ticker => processStock(ticker, data[ticker]));
+            }
+        } catch (err) { console.error("Stock Data Error:", err); }
+    }
+
+    function calculatePnL(totalCurrentVal) {
+        let totalPrevVal = 0;
+        portfolio.forEach(asset => {
+            const data = state.prices[asset.ticker];
+            if (!data) return;
+            let currentPrice = data.usd;
+            if (state.currency === 'EUR') currentPrice = asset.type !== 'stock' ? data.eur : (data.usd * state.exchangeRate);
+            else if (state.currency === 'NPR') currentPrice = data.usd * state.exchangeRateNPR;
+            else if (state.currency === 'BTC') currentPrice = state.btcPrice > 0 ? (data.usd / state.btcPrice) : 0;
+            totalPrevVal += (currentPrice / (1 + (data.change / 100))) * asset.qty;
+        });
+        const pnlValue = totalCurrentVal - totalPrevVal;
+        return { val: pnlValue, pct: totalPrevVal > 0 ? (pnlValue / totalPrevVal) * 100 : 0 };
+    }
+
+    function calculateTotal() {
+        let total = 0;
+        portfolio.forEach(asset => {
+            const data = state.prices[asset.ticker];
+            if (!data) return;
+            let price = data.usd;
+            if (state.currency === 'EUR') price = asset.type !== 'stock' ? data.eur : (data.usd * state.exchangeRate);
+            else if (state.currency === 'NPR') price = data.usd * state.exchangeRateNPR;
+            else if (state.currency === 'BTC') price = state.btcPrice > 0 ? (data.usd / state.btcPrice) : 0;
+            total += price * asset.qty;
+        });
+        return total;
+    }
+
+    // --- CHART PLUGINS ---
+    let lastHoveredIndex = -1;
+    const chartHoverFX = {
+        id: 'chartHoverFX',
+        beforeEvent(chart, args) {
+            const event = args.event;
+            if (event.type === 'mousemove') {
+                const elements = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, true);
+                if (elements.length > 0) {
+                    const index = elements[0].index;
+                    if (index !== lastHoveredIndex) {
+                        const data = chart.data.datasets[0].data;
+                        fx.playChartHover(data[index] / Math.max(...data));
+                        explodeParticles(args.event.x + chart.canvas.getBoundingClientRect().left + window.scrollX, args.event.y + chart.canvas.getBoundingClientRect().top + window.scrollY, true);
+                        lastHoveredIndex = index;
+                    }
+                } else lastHoveredIndex = -1;
+            }
+        }
+    };
+
+    function renderCharts(assetData) {
+        Chart.defaults.color = '#8899a6';
+        Chart.defaults.font.family = '"JetBrains Mono", monospace';
+        const labels = assetData.map(item => item.ticker);
+        const dataValues = assetData.map(item => item.totalVal);
+        const colors = [ '#00f3ff', '#00ff9d', '#ff0055', '#ffe600', '#bc13fe', '#ff8400' ];
+
+        const pieCtx = document.getElementById('pieChart').getContext('2d');
+        if (state.pieChartInstance) state.pieChartInstance.destroy();
+        state.pieChartInstance = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: { labels, datasets: [{ data: dataValues, backgroundColor: colors, borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'right' } } },
+            plugins: [chartHoverFX] 
+        });
+
+        const barCtx = document.getElementById('barChart').getContext('2d');
+        if (state.barChartInstance) state.barChartInstance.destroy();
+        state.barChartInstance = new Chart(barCtx, {
+            type: 'bar',
+            data: { labels, datasets: [{ data: dataValues, backgroundColor: colors }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+            plugins: [chartHoverFX] 
+        });
+    }
+
+    function renderSkeletons() {
+        document.getElementById('total-value').innerHTML = `<span class="skeleton" style="width: 200px; height: 1em; display:inline-block;"></span>`;
+        document.getElementById('asset-table-body').innerHTML = Array(5).fill('<tr>' + Array(5).fill('<td><div class="skeleton" style="height:20px;"></div></td>').join('') + '</tr>').join('');
+    }
+
+    function render() {
+        if (isLoading) return;
+        const tbody = document.getElementById('asset-table-body');
+        tbody.innerHTML = ''; 
+        
+        let tickerHTML = '';
+        const totalValue = calculateTotal();
+        const symbol = getSymbol();
+        let chartData = [];
+
+        document.getElementById('header-price').innerText = `Price (${symbol})`;
+        document.getElementById('header-val').innerText = `Value (${symbol})`;
+        document.getElementById('main-currency-symbol').innerText = symbol;
+        
+        portfolio.forEach((asset, index) => {
+            const data = state.prices[asset.ticker];
+            if(!data) return;
+            let price = data.usd;
+            if (state.currency === 'EUR') price = asset.type !== 'stock' ? data.eur : (data.usd * state.exchangeRate);
+            else if (state.currency === 'NPR') price = data.usd * state.exchangeRateNPR;
+            else if (state.currency === 'BTC') price = state.btcPrice > 0 ? (data.usd / state.btcPrice) : 0;
+
+            const totalVal = price * asset.qty;
+            chartData.push({ ticker: asset.ticker, totalVal, change: data.change });
+
+            // Ticker Logic
+            const trendClass = data.change >= 0 ? 'ticker-up' : 'ticker-down';
+            const trendSign = data.change >= 0 ? '▲' : '▼';
+            tickerHTML += `
+                <span class="ticker-item">
+                    ${asset.ticker} <span class="${trendClass}">${trendSign} ${Math.abs(data.change).toFixed(2)}%</span>
+                </span>
+            `;
+
+            // Table Row Logic
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><span class="ticker-badge">${asset.ticker}</span><span class="hide-mobile">${asset.name}</span></td>
+                <td class="price-glow">${formatNumber(price)}</td>
+                <td class="hide-mobile ${data.change >= 0 ? 'positive' : 'negative'}">${data.change >= 0 ? '▲' : '▼'} ${Math.abs(data.change).toFixed(2)}%</td>
+                <td>
+                     <input type="number" class="qty-input" id="qty-input-${index}" value="${asset.qty}" step="any">
+                </td>
+                <td class="text-right">${formatNumber(totalVal)}</td>
+                 <td>
+                    <button class="del-btn" onclick="deleteAsset(${index})" title="Remove">✕</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        if (isHidden) {
+             document.getElementById('total-value').innerHTML = formatNumber(totalValue);
+        } else if (!isFirstLoad) {
+             animateValue(document.getElementById('total-value'), 0, totalValue, 1500, (v) => formatNumber(v));
+        } else {
+             document.getElementById('total-value').innerHTML = formatNumber(totalValue);
+        }
+
+        const pnl = calculatePnL(totalValue);
+        document.getElementById('pnl-value').innerHTML = `<span style="color:${pnl.val >= 0 ? '#00ff9d' : '#ff0055'}">${pnl.val >= 0 ? '+' : ''}${formatNumber(pnl.val)}</span>`;
+        document.getElementById('pnl-percent').innerHTML = `<span style="color:${pnl.val >= 0 ? '#00ff9d' : '#ff0055'}">${pnl.val >= 0 ? '+' : ''}${isHidden ? '•••' : pnl.pct.toFixed(2)}%</span>`;
+        document.getElementById('pnl-bar').style.width = `${Math.min(Math.abs(pnl.pct) * 20, 100)}%`;
+        document.getElementById('pnl-bar').style.background = pnl.val >= 0 ? '#00ff9d' : '#ff0055';
+        
+        // --- SEAMLESS TICKER LOOP LOGIC ---
+        // 1. Construct the basic ticker string
+        const pfTrendClass = pnl.val >= 0 ? 'ticker-up' : 'ticker-down';
+        const pfSign = pnl.val >= 0 ? '+' : '';
+        const pfPercentDisplay = isHidden ? '••••' : `${pfSign}${pnl.pct.toFixed(2)}%`;
+        const portfolioTickerItem = `<span class="ticker-item">NET LIQ: <strong class="${pfTrendClass}">${pfPercentDisplay}</strong></span>`;
+        
+        const fullContent = portfolioTickerItem + tickerHTML;
+        
+        // 2. Inject duplicated content for the CSS infinite scroll hack
+        document.getElementById('ticker-track').innerHTML = fullContent + fullContent;
+
+        renderCharts(chartData);
+    }
+    
+     // --- ACTIONS ---
+    function updatePortfolioQuantitiesFromInputs() {
+        portfolio.forEach((asset, index) => {
+            const inputEl = document.getElementById(`qty-input-${index}`);
+            if(inputEl) {
+                let newQty = parseFloat(inputEl.value);
+                if(isNaN(newQty)) newQty = 0;
+                asset.qty = newQty;
+            }
+        });
+    }
+
+    function persistPortfolio() {
+        localStorage.setItem('asset_terminal_data', JSON.stringify(portfolio));
+        render();
+    }
+
+    function savePortfolio() {
+        updatePortfolioQuantitiesFromInputs();
+        persistPortfolio();
+        const btn = document.getElementById('save-btn');
+        const originalText = btn.innerText;
+        btn.innerText = "SAVED!";
+        btn.style.boxShadow = "0 0 20px var(--neon-green)";
+        setTimeout(() => { btn.innerText = originalText; btn.style.boxShadow = "none"; }, 1500);
+    }
+    
+    // EXPORT FUNCTION
+    function exportPortfolio() {
+        // Ensure latest qty values are captured
+        portfolio.forEach((asset, index) => {
+            const inputEl = document.getElementById(`qty-input-${index}`);
+            if(inputEl) {
+                let newQty = parseFloat(inputEl.value);
+                if(!isNaN(newQty)) asset.qty = newQty;
+            }
+        });
+        
+        const dataStr = JSON.stringify(portfolio, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "portfolio_config.json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    
+    // IMPORT FUNCTION
+    function importPortfolio(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const importedData = JSON.parse(e.target.result);
+                // Basic validation: check if array and has ticker/qty fields
+                if (Array.isArray(importedData) && importedData.length > 0 && importedData[0].ticker !== undefined) {
+                    if(confirm(`Load portfolio with ${importedData.length} assets? This will replace your current config.`)) {
+                        portfolio = importedData;
+                        localStorage.setItem('asset_terminal_data', JSON.stringify(portfolio));
+                        syncData(); // Refresh prices for new assets
+                        alert('Portfolio successfully imported!');
+                    }
+                } else {
+                    alert('Invalid file format. Please upload a valid JSON portfolio file.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error reading file.');
+            }
+        };
+        reader.readAsText(file);
+        // Reset input so the same file can be selected again if needed
+        input.value = ''; 
+    }
+
+
+    async function syncData() {
+        fx.playClick();
+        const btn = document.getElementById('refresh-btn');
+        btn.classList.add('sync-active');
+        document.getElementById('btn-text').innerText = "UPLINKING...";
+        isLoading = true;
+        renderSkeletons();
+        await Promise.all([fetchForex(), fetchCrypto(), fetchStocks()]);
+        await new Promise(r => setTimeout(r, 800));
+        isLoading = false;
+        render();
+        fx.playSuccess();
+        btn.classList.remove('sync-active');
+        document.getElementById('btn-text').innerText = "Sync Data";
+    }
+
+    function toggleCurrency() {
+        const order = ['EUR', 'NPR', 'BTC', 'USD'];
+        state.currency = order[(order.indexOf(state.currency) + 1) % order.length];
+        fx.playClick(); 
+        render();
+    }
+    
+     // --- MODAL & ADD/REMOVE LOGIC ---
+    function toggleModal(show) {
+        const modal = document.getElementById('add-modal');
+        if(show) {
+            modal.classList.add('open');
+            document.getElementById('new-ticker').value = '';
+            document.getElementById('new-name').value = '';
+            document.getElementById('new-qty').value = '';
+            document.getElementById('new-api-id').value = '';
+            toggleApiIdField();
+        } else {
+            modal.classList.remove('open');
+        }
+    }
+
+    function toggleApiIdField() {
+        const type = document.getElementById('new-type').value;
+        const apiGroup = document.getElementById('api-id-group');
+        apiGroup.style.display = (type === 'crypto') ? 'block' : 'none';
+    }
+
+    function deleteAsset(index) {
+        if(confirm('Remove this asset from portfolio?')) {
+            updatePortfolioQuantitiesFromInputs();
+            portfolio.splice(index, 1);
+            persistPortfolio();
+        }
+    }
+
+    function addNewAsset() {
+        const type = document.getElementById('new-type').value;
+        const ticker = document.getElementById('new-ticker').value.toUpperCase().trim();
+        const name = document.getElementById('new-name').value.trim();
+        const qty = parseFloat(document.getElementById('new-qty').value);
+        let apiId = null;
+
+        if(!ticker || !name || isNaN(qty)) {
+            alert('Please fill in all required fields.');
+            return;
+        }
+
+        if(type === 'crypto') {
+            apiId = document.getElementById('new-api-id').value.trim().toLowerCase();
+            if(!apiId) {
+                alert('CoinGecko ID is required for crypto assets.');
+                return;
+            }
+        }
+
+        portfolio.push({ ticker, name, type, qty, apiId });
+        localStorage.setItem('asset_terminal_data', JSON.stringify(portfolio));
+        toggleModal(false);
+        syncData(); // Sync to get price for new asset
+    }
+
+    // --- API KEY MANAGEMENT ---
+    function saveApiKeyAndBoot() {
+        const input = document.getElementById('api-key-input');
+        const key = input ? input.value.trim() : '';
+        if (!key) {
+            document.getElementById('boot-api-error').style.display = 'block';
+            return;
+        }
+        localStorage.setItem('twelve_data_api_key', key);
+        initializeSystem();
+    }
+
+    function forgetApiKey() {
+        localStorage.removeItem('twelve_data_api_key');
+        location.reload();
+    }
+
+    // Called on page load — decides what the boot screen shows
+    function initBootScreen() {
+        const hasKey = !!getTwelveDataKey();
+        const formEl   = document.getElementById('boot-api-form');
+        const launchEl = document.getElementById('boot-launch');
+        if (hasKey) {
+            launchEl.style.display = 'flex';
+        } else {
+            formEl.style.display = 'flex';
+            setTimeout(() => {
+                const inp = document.getElementById('api-key-input');
+                if (inp) inp.focus();
+            }, 100);
+        }
+    }
+
+    async function initializeSystem() {
+        initChartParticles();
+        fx.resume();
+        fx.startWhirling();
+        document.getElementById('boot-screen').style.opacity = '0';
+        setTimeout(() => document.getElementById('boot-screen').style.display = 'none', 800);
+        isLoading = true;
+        renderSkeletons();
+        await Promise.all([fetchForex(), fetchCrypto(), fetchStocks()]);
+        isLoading = false;
+        await fx.decelerate();
+        fx.playLowFreqDrum();
+        document.getElementById('main-interface').classList.add('visible');
+        render();
+        if(!isHidden) animateValue(document.getElementById('total-value'), 0, calculateTotal(), 3000, (v) => formatNumber(v));
+        isFirstLoad = false;
+    }
+    
+     function lockTerminal() {
+        location.reload();
+    }
+
+    // Run boot screen setup on load
+    document.addEventListener('DOMContentLoaded', initBootScreen);
+
+    // --- TICKER AUTO-SCROLL (with manual override) ---
+    (function initTickerScroll() {
+        const SCROLL_SPEED = 0.6;      // px per frame at ~60fps
+        const RESUME_DELAY = 2500;     // ms idle before auto-scroll resumes
+
+        let userControlled = false;
+        let resumeTimer = null;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartScroll = 0;
+
+        function scheduleResume() {
+            clearTimeout(resumeTimer);
+            resumeTimer = setTimeout(() => { userControlled = false; }, RESUME_DELAY);
+        }
+
+        function tick() {
+            const wrap = document.getElementById('ticker-wrap');
+            if (wrap && !userControlled) {
+                wrap.scrollLeft += SCROLL_SPEED;
+                // Seamless loop: content is duplicated — reset at halfway
+                if (wrap.scrollLeft >= wrap.scrollWidth / 2) {
+                    wrap.scrollLeft -= wrap.scrollWidth / 2;
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const wrap = document.getElementById('ticker-wrap');
+            if (!wrap) return;
+
+            // Mouse drag
+            wrap.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                userControlled = true;
+                clearTimeout(resumeTimer);
+                dragStartX = e.pageX;
+                dragStartScroll = wrap.scrollLeft;
+                e.preventDefault();
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                wrap.scrollLeft = dragStartScroll - (e.pageX - dragStartX);
+            });
+            window.addEventListener('mouseup', () => {
+                if (!isDragging) return;
+                isDragging = false;
+                scheduleResume();
+            });
+
+            // Touch drag
+            wrap.addEventListener('touchstart', (e) => {
+                userControlled = true;
+                clearTimeout(resumeTimer);
+                dragStartX = e.touches[0].pageX;
+                dragStartScroll = wrap.scrollLeft;
+            }, { passive: true });
+            wrap.addEventListener('touchmove', (e) => {
+                wrap.scrollLeft = dragStartScroll - (e.touches[0].pageX - dragStartX);
+            }, { passive: true });
+            wrap.addEventListener('touchend', () => scheduleResume());
+
+            // Wheel / trackpad
+            wrap.addEventListener('wheel', (e) => {
+                userControlled = true;
+                clearTimeout(resumeTimer);
+                wrap.scrollLeft += e.deltaY || e.deltaX;
+                scheduleResume();
+            }, { passive: true });
+
+            requestAnimationFrame(tick);
+        });
+    })();
+</script>
+</body>
+</html>
